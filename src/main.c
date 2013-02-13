@@ -124,7 +124,7 @@ void *writer_thread(void *arg) {
 int main(int argc, char **argv)
 {
     int i;
-    data_store_t* shared_data = create_data_store();
+    data_store_t* shared_data = data_store_create();
 
     for(i = 0; i < N; i++) {
         pthread_create(NULL, NULL, reader_thread, shared_data);
@@ -166,8 +166,8 @@ int main(int argc, char **argv)
     }
 
     /* Clean up */
-    // TODO stop all the read/write threads
-    destroy_data_store(shared_data);
+    // TODO Stop all the read/write threads
+    data_store_destroy(shared_data);
     screen_stop_events(screen_ctx);
     bps_shutdown();
     screen_destroy_window(screen_win);

@@ -44,7 +44,7 @@ static int unlock_data_store(data_store_t* data_store) {
  * This helper function creates ready to use data_store_t
  * structures.
  */
-data_store_t* create_data_store() {
+data_store_t* data_store_create() {
     data_store_t* retval = malloc(sizeof(data_store_t));
 
     pthread_rwlock_init(&retval->pthread_rwlock, NULL);
@@ -59,7 +59,7 @@ data_store_t* create_data_store() {
  * This helper function cleans up a data_store structure
  * and then frees it.
  */
-void destroy_data_store(data_store_t* data_store) {
+void data_store_destroy(data_store_t* data_store) {
     if(NULL != data_store) {
         pthread_rwlock_destroy(&data_store->pthread_rwlock);
         free(data_store);
