@@ -12,34 +12,41 @@
 * limitations under the License.
 */
 
+#include <pthread.h>
 #include <semaphore.h>
 
 /**
  * A data block structure for the data store structure.
  */
 struct data_block_t {
-    pthread_mutex_t __processed_mutex; // If the mutex is valid it means it was not processed
-    int (*process)(struct data_block_t *, void (*process_data_callback)(const char* data, int buffer_size)); // returns 1 on sucess, 0 on failure
-    char* __data;
-    int __data_size;
-};
+    char*           __data;
+    int             __data_size;
+    pthread_mutex_t __processed_mutex; // If the mutex is valid it means this block was not processed.
 
+    // Call this function to process the data block with your own callback
+    // method. You function will be called when it is safe to process the
+    // data. Returns 1 on success, 0 when the data block was invalid (already
+    // processed.)
+    int (*process)(struct data_block_t *, void (*process_data_callback)(const char* data, int buffer_size));
+};
 typedef struct data_block_t data_block_t;
 
 /**
  * A data store structure.
  */
 struct data_store_t {
-    pthread_rwlock_t __rwlock;
-    sem_t __data_available_sem;
-    int (*wr_lock)(struct data_store_t *);
+    data_block_t*    __data_blocks;
+    int              __data_block_count;
+    sem_t            __data_blocks_available_sem; // A sem_post on this semaphore is called for each
+                                                  // new data block added to the __data_blocks.
+    // Call this method to add a data block.
+    void (*add_data_block)(struct data_store_t *, const char* buffer, int buffer_size);
+
+    // Call these methods to lock and unlock the read/write lock.
     int (*rd_lock)(struct data_store_t *);
     int (*unlock)(struct data_store_t *);
-    void (*add_data_block)(struct data_store_t *, const char* buffer, int buffer_size);
-    data_block_t* __data_blocks;
-    int __data_block_count;
+    pthread_rwlock_t __rwlock;
 };
-
 typedef struct data_store_t data_store_t;
 
 /**

@@ -13,11 +13,12 @@
 */
 
 #include <errno.h>
-#include <pthread.h>
-#include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <stdio.h>
 #include "data_store.h"
+
+static void data_block_init(data_block_t* data_block, const char* data, int data_size);
 
 /**
  * This member function calls pthread_rwlock_rdlock on the
@@ -29,15 +30,6 @@ static int __data_store_rd_lock(data_store_t* data_store) {
 }
 
 /**
- * This member function calls pthread_rwlock_wrlock on the
- * pthread_rwlock of a data_store_t structure.
- */
-static int __data_store_wr_lock(data_store_t* data_store) {
-    assert(data_store);
-    return pthread_rwlock_wrlock(&data_store->__rwlock);
-}
-
-/**
  * This member function calls pthread_rwlock_unlock on the
  * pthread_rwlock of a data_store_t structure.
  */
@@ -46,27 +38,25 @@ static int __data_store_unlock(data_store_t* data_store) {
     return pthread_rwlock_unlock(&data_store->__rwlock);
 }
 
-static void data_block_init(data_block_t* data_block, const char* data, int data_size);
-
 /**
  * This member function adds a data block to the data store.
  */
 static void __data_store_add_data_block(data_store_t* data_store, const char* buffer, int buffer_size) {
     assert(data_store);
 
-    // Firstly we want to get a write lock
-    data_store->wr_lock(data_store);
+    // Firstly we want to get a write lock.
+    pthread_rwlock_wrlock(&data_store->__rwlock);
 
-    // We got the write lock, let's modify the data struct to add a new data block
+    // We got the write lock, let's modify the data struct to add a new data block.
     data_store->__data_block_count++;
     data_store->__data_blocks = realloc(data_store->__data_blocks, data_store->__data_block_count * sizeof(data_block_t));
 
-    // Initialize that new data block with the data provided in the arguments
+    // Initialize the new data block with the data provided in the arguments.
     data_block_init(&data_store->__data_blocks[data_store->__data_block_count - 1], buffer, buffer_size);
 
-    // We're done, now unlock the read lock and increment the semaphore by 1 to indicate a new block is available
+    // We're done, now unlock the read lock and increment the semaphore by 1 to indicate a new block is available.
     data_store->unlock(data_store);
-    sem_post(&data_store->__data_available_sem);
+    sem_post(&data_store->__data_blocks_available_sem);
 }
 
 /**
@@ -79,7 +69,8 @@ static int __data_block_process(data_block_t* data_block, void (*process_data_ca
     // This has to be done atomically or else another thread might grab it in between the processed
     // state checking and setting.
     if (EOK == pthread_mutex_trylock(&data_block->__processed_mutex)) {
-        // We got the mutex, destroy it immediately.
+        // We got the mutex, destroy it immediately which will indicate to other threads
+        // that this block is processed.
         pthread_mutex_destroy(&data_block->__processed_mutex);
 
         // Call the process callback function provided.
@@ -132,10 +123,9 @@ data_store_t* data_store_create() {
 
     // Initialize the sync tools.
     pthread_rwlock_init(&retval->__rwlock, NULL);
-    sem_init(&retval->__data_available_sem, 0, 0);
+    sem_init(&retval->__data_blocks_available_sem, 0, 0);
 
     // Assign the member functions.
-    retval->wr_lock = __data_store_wr_lock;
     retval->rd_lock = __data_store_rd_lock;
     retval->unlock = __data_store_unlock;
     retval->add_data_block = __data_store_add_data_block;
@@ -155,7 +145,7 @@ void data_store_destroy(data_store_t* data_store) {
     assert(data_store);
 
     // Lock the data store for writing.
-    data_store->wr_lock(data_store);
+    pthread_rwlock_wrlock(&data_store->__rwlock);
 
     // Destroy the data blocks.
     if (data_store->__data_blocks) {
@@ -167,7 +157,7 @@ void data_store_destroy(data_store_t* data_store) {
 
     // Destroy the sync tools.
     pthread_rwlock_destroy(&data_store->__rwlock);
-    sem_destroy(&data_store->__data_available_sem);
+    sem_destroy(&data_store->__data_blocks_available_sem);
 
     // Finally, free the data store.
     free(data_store);

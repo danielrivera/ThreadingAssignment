@@ -119,7 +119,7 @@ void *reader_thread(void *arg) {
 
     while(shared_data) {
         // Wait until some data is available
-        sem_wait(&shared_data->__data_available_sem);
+        sem_wait(&shared_data->__data_blocks_available_sem);
 
         // Lock for reading
         shared_data->rd_lock(shared_data);
