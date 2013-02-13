@@ -21,7 +21,7 @@
 #include <fcntl.h>
 #include <screen/screen.h>
 #include <pthread.h>
-#include <stdlib.h>
+#include "data_store.h"
 
 static bool shutdown;
 
@@ -86,66 +86,6 @@ handle_event()
 }
 
 //TODO Define global data structures to be used
-
-/**
- * The shared data structure.
- */
-typedef struct data_store_t {
-    pthread_rwlock_t m_lock;
-    int (*wr_lock)(struct data_store_t *);
-    int (*rd_lock)(struct data_store_t *);
-    int (*unlock)(struct data_store_t *);
-} data_store_t;
-
-/**
- * This helper function calls pthread_rwlock_rdlock on the
- * m_lock of a data_store_t structure.
- */
-int rd_lock_data_store(data_store_t* data_store) {
-    return pthread_rwlock_rdlock(&data_store->m_lock);
-}
-
-/**
- * This helper function calls pthread_rwlock_wrlock on the
- * m_lock of a data_store_t structure.
- */
-int wr_lock_data_store(data_store_t* data_store) {
-    return pthread_rwlock_wrlock(&data_store->m_lock);
-}
-
-/**
- * This helper function calls pthread_rwlock_unlock on the
- * m_lock of a data_store_t structure.
- */
-int unlock_data_store(data_store_t* data_store) {
-    return pthread_rwlock_unlock(&data_store->m_lock);
-}
-
-/**
- * This helper function creates ready to use data_store_t
- * structures.
- */
-data_store_t* create_data_store() {
-    data_store_t* retval = malloc(sizeof(data_store_t));
-
-    pthread_rwlock_init(&retval->m_lock, NULL);
-    retval->wr_lock = wr_lock_data_store;
-    retval->rd_lock = rd_lock_data_store;
-    retval->unlock = unlock_data_store;
-
-    return retval;
-}
-
-/**
- * This helper function cleans up a data_store structure
- * and then frees it.
- */
-void destroy_data_store(data_store_t* data_store) {
-    if(NULL != data_store) {
-        pthread_rwlock_destroy(&data_store->m_lock);
-        free(data_store);
-    }
-}
 
 /**
  * This thread is responsible for pulling data off of the shared data
