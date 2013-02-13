@@ -12,32 +12,115 @@
 * limitations under the License.
 */
 
+#include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <string.h>
+#include <assert.h>
 #include "data_store.h"
 
 /**
- * This helper function calls pthread_rwlock_rdlock on the
+ * This member function calls pthread_rwlock_rdlock on the
  * pthread_rwlock of a data_store_t structure.
  */
-static int rd_lock_data_store(data_store_t* data_store) {
-    return pthread_rwlock_rdlock(&data_store->pthread_rwlock);
+static int __data_store_rd_lock(data_store_t* data_store) {
+    assert(data_store);
+    return pthread_rwlock_rdlock(&data_store->__rwlock);
 }
 
 /**
- * This helper function calls pthread_rwlock_wrlock on the
+ * This member function calls pthread_rwlock_wrlock on the
  * pthread_rwlock of a data_store_t structure.
  */
-static int wr_lock_data_store(data_store_t* data_store) {
-    return pthread_rwlock_wrlock(&data_store->pthread_rwlock);
+static int __data_store_wr_lock(data_store_t* data_store) {
+    assert(data_store);
+    return pthread_rwlock_wrlock(&data_store->__rwlock);
 }
 
 /**
- * This helper function calls pthread_rwlock_unlock on the
+ * This member function calls pthread_rwlock_unlock on the
  * pthread_rwlock of a data_store_t structure.
  */
-static int unlock_data_store(data_store_t* data_store) {
-    return pthread_rwlock_unlock(&data_store->pthread_rwlock);
+static int __data_store_unlock(data_store_t* data_store) {
+    assert(data_store);
+    return pthread_rwlock_unlock(&data_store->__rwlock);
+}
+
+static void data_block_init(data_block_t* data_block, const char* data, int data_size);
+
+/**
+ * This member function adds a data block to the data store.
+ */
+static void __data_store_add_data_block(data_store_t* data_store, const char* buffer, int buffer_size) {
+    assert(data_store);
+
+    // Firstly we want to get a write lock
+    data_store->wr_lock(data_store);
+
+    // We got the write lock, let's modify the data struct to add a new data block
+    data_store->__data_block_count++;
+    data_store->__data_blocks = realloc(data_store->__data_blocks, data_store->__data_block_count * sizeof(data_block_t));
+
+    // Initialize that new data block with the data provided in the arguments
+    data_block_init(&data_store->__data_blocks[data_store->__data_block_count - 1], buffer, buffer_size);
+
+    // We're done, now unlock the read lock and increment the semaphore by 1 to indicate a new block is available
+    data_store->unlock(data_store);
+    sem_post(&data_store->__data_available_sem);
+}
+
+/**
+ * This member function processes a data block using the provided callback function.
+ */
+static int __data_block_process(data_block_t* data_block, void (*process_data_callback)(const char* data, int buffer_size)) {
+    assert(data_block);
+
+    // First we need to check if the block has been processed, and if not then set it to processed.
+    // This has to be done atomically or else another thread might grab it in between the processed
+    // state checking and setting.
+    if (EOK == pthread_mutex_trylock(&data_block->__processed_mutex)) {
+        // We got the mutex, destroy it immediately.
+        pthread_mutex_destroy(&data_block->__processed_mutex);
+
+        // Call the process callback function provided.
+        if (process_data_callback) {
+            process_data_callback(data_block->__data, data_block->__data_size);
+        }
+
+        // If there was any data, free it.
+        if (data_block->__data) {
+            free(data_block->__data);
+            data_block->__data = NULL;
+            data_block->__data_size = 0;
+        }
+
+        return 1;
+    } else {
+        // The mutex wasn't good meaning that this blocked was processed.
+        return 0;
+    }
+}
+
+/**
+ * Initializes a data_block instance with the data provided in the arguments.
+ */
+static void data_block_init(data_block_t* data_block, const char* data, int data_size) {
+    assert(data_block);
+
+    // Initialize it to 0
+    memset(data_block, 0, sizeof(data_block_t));
+
+    // Create a processed flag mutex for it
+    pthread_mutex_init(&data_block->__processed_mutex, NULL);
+
+    // Assign the process function
+    data_block->process = __data_block_process;
+
+    // Initialize the actual data buffer.
+    if (data && data_size > 0) {
+        data_block->__data = memcpy(malloc(data_size), data, data_size);
+        data_block->__data_size = data_size;
+    }
 }
 
 /**
@@ -47,10 +130,19 @@ static int unlock_data_store(data_store_t* data_store) {
 data_store_t* data_store_create() {
     data_store_t* retval = malloc(sizeof(data_store_t));
 
-    pthread_rwlock_init(&retval->pthread_rwlock, NULL);
-    retval->wr_lock = wr_lock_data_store;
-    retval->rd_lock = rd_lock_data_store;
-    retval->unlock = unlock_data_store;
+    // Initialize the sync tools.
+    pthread_rwlock_init(&retval->__rwlock, NULL);
+    sem_init(&retval->__data_available_sem, 0, 0);
+
+    // Assign the member functions.
+    retval->wr_lock = __data_store_wr_lock;
+    retval->rd_lock = __data_store_rd_lock;
+    retval->unlock = __data_store_unlock;
+    retval->add_data_block = __data_store_add_data_block;
+
+    // Init the data blocks.
+    retval->__data_block_count = 0;
+    retval->__data_blocks = NULL;
 
     return retval;
 }
@@ -60,8 +152,23 @@ data_store_t* data_store_create() {
  * and then frees it.
  */
 void data_store_destroy(data_store_t* data_store) {
-    if(NULL != data_store) {
-        pthread_rwlock_destroy(&data_store->pthread_rwlock);
-        free(data_store);
+    assert(data_store);
+
+    // Lock the data store for writing.
+    data_store->wr_lock(data_store);
+
+    // Destroy the data blocks.
+    if (data_store->__data_blocks) {
+        //TODO Clean up all the data blocks
+        free(data_store->__data_blocks);
+        data_store->__data_blocks = NULL;
+        data_store->__data_block_count = 0;
     }
+
+    // Destroy the sync tools.
+    pthread_rwlock_destroy(&data_store->__rwlock);
+    sem_destroy(&data_store->__data_available_sem);
+
+    // Finally, free the data store.
+    free(data_store);
 }

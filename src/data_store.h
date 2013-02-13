@@ -12,14 +12,32 @@
 * limitations under the License.
 */
 
+#include <semaphore.h>
+
+/**
+ * A data block structure for the data store structure.
+ */
+struct data_block_t {
+    pthread_mutex_t __processed_mutex; // If the mutex is valid it means it was not processed
+    int (*process)(struct data_block_t *, void (*process_data_callback)(const char* data, int buffer_size)); // returns 1 on sucess, 0 on failure
+    char* __data;
+    int __data_size;
+};
+
+typedef struct data_block_t data_block_t;
+
 /**
  * A data store structure.
  */
 struct data_store_t {
-    pthread_rwlock_t pthread_rwlock;
+    pthread_rwlock_t __rwlock;
+    sem_t __data_available_sem;
     int (*wr_lock)(struct data_store_t *);
     int (*rd_lock)(struct data_store_t *);
     int (*unlock)(struct data_store_t *);
+    void (*add_data_block)(struct data_store_t *, const char* buffer, int buffer_size);
+    data_block_t* __data_blocks;
+    int __data_block_count;
 };
 
 typedef struct data_store_t data_store_t;

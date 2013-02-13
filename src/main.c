@@ -85,18 +85,59 @@ handle_event()
     }
 }
 
-//TODO Define global data structures to be used
+/**
+ * Make-believe function for getting external data, where buffer
+ * is a pointer to memory of bufferSizeInBytes that can be filled
+ * in. The return value indicates the number of bytes that have
+ * been filled in, or < 0 on error.
+ */
+int get_external_data(char *buffer, int bufferSizeInBytes) {
+    if(buffer) {
+        //TODO Get some real data
+        return bufferSizeInBytes; // Just pretend we filled the whole buffer
+    }
+
+    return -1; // Error
+}
+
+/**
+ * Make-believe function for processing data in the data store,
+ * where buffer is a pointer to the data to be processed with
+ * a length of bufferSizeInBytes.
+ */
+void process_data(const char *buffer, int bufferSizeInBytes) {
+    //TODO Do some funky processing.
+}
 
 /**
  * This thread is responsible for pulling data off of the shared data
  * area and processing it using the process_data() API.
  */
 void *reader_thread(void *arg) {
-    //TODO: Define set-up required
     data_store_t* shared_data = (data_store_t*)arg;
+    int data_block_index = 0;
 
-    while(1) {
-        //TODO: Define data extraction (queue) and processing
+    while(shared_data) {
+        // Wait until some data is available
+        sem_wait(&shared_data->__data_available_sem);
+
+        // Lock for reading
+        shared_data->rd_lock(shared_data);
+
+        // Try to process a block until the end of the data set
+        while (data_block_index < shared_data->__data_block_count) {
+            data_block_t* data_block = &shared_data->__data_blocks[data_block_index];
+
+            if (data_block->process(data_block, process_data)) {
+                // The block was processed, exit
+                break;
+            }
+
+            data_block_index++;
+        }
+
+        // Done processing a block, unlock the read lock.
+        shared_data->unlock(shared_data);
     }
 
     return NULL;
@@ -108,11 +149,16 @@ void *reader_thread(void *arg) {
  * processing by one of the reader threads.
  */
 void *writer_thread(void *arg) {
-    //TODO: Define set-up required
     data_store_t* shared_data = (data_store_t*)arg;
 
-    while(1) {
-        //TODO: Define data extraction (device) and storage
+    while(shared_data) {
+        const int buffer_size = 256;
+        char buffer[buffer_size];
+
+        if (get_external_data(buffer, buffer_size) > 0) {
+            // We got some data, add it to the data structure.
+            shared_data->add_data_block(shared_data, buffer, buffer_size);
+        }
     }
 
     return NULL;
