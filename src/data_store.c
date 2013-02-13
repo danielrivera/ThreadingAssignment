@@ -18,26 +18,26 @@
 
 /**
  * This helper function calls pthread_rwlock_rdlock on the
- * m_lock of a data_store_t structure.
+ * pthread_rwlock of a data_store_t structure.
  */
 static int rd_lock_data_store(data_store_t* data_store) {
-    return pthread_rwlock_rdlock(&data_store->m_lock);
+    return pthread_rwlock_rdlock(&data_store->pthread_rwlock);
 }
 
 /**
  * This helper function calls pthread_rwlock_wrlock on the
- * m_lock of a data_store_t structure.
+ * pthread_rwlock of a data_store_t structure.
  */
 static int wr_lock_data_store(data_store_t* data_store) {
-    return pthread_rwlock_wrlock(&data_store->m_lock);
+    return pthread_rwlock_wrlock(&data_store->pthread_rwlock);
 }
 
 /**
  * This helper function calls pthread_rwlock_unlock on the
- * m_lock of a data_store_t structure.
+ * pthread_rwlock of a data_store_t structure.
  */
 static int unlock_data_store(data_store_t* data_store) {
-    return pthread_rwlock_unlock(&data_store->m_lock);
+    return pthread_rwlock_unlock(&data_store->pthread_rwlock);
 }
 
 /**
@@ -47,7 +47,7 @@ static int unlock_data_store(data_store_t* data_store) {
 data_store_t* create_data_store() {
     data_store_t* retval = malloc(sizeof(data_store_t));
 
-    pthread_rwlock_init(&retval->m_lock, NULL);
+    pthread_rwlock_init(&retval->pthread_rwlock, NULL);
     retval->wr_lock = wr_lock_data_store;
     retval->rd_lock = rd_lock_data_store;
     retval->unlock = unlock_data_store;
@@ -61,7 +61,7 @@ data_store_t* create_data_store() {
  */
 void destroy_data_store(data_store_t* data_store) {
     if(NULL != data_store) {
-        pthread_rwlock_destroy(&data_store->m_lock);
+        pthread_rwlock_destroy(&data_store->pthread_rwlock);
         free(data_store);
     }
 }

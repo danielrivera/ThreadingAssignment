@@ -16,7 +16,7 @@
  * A data store structure.
  */
 struct data_store_t {
-    pthread_rwlock_t m_lock;
+    pthread_rwlock_t pthread_rwlock;
     int (*wr_lock)(struct data_store_t *);
     int (*rd_lock)(struct data_store_t *);
     int (*unlock)(struct data_store_t *);
