@@ -21,6 +21,7 @@
 #include <fcntl.h>
 #include <screen/screen.h>
 #include <pthread.h>
+#include <stdlib.h>
 
 static bool shutdown;
 
@@ -86,6 +87,65 @@ handle_event()
 
 //TODO Define global data structures to be used
 
+/**
+ * The shared data structure.
+ */
+typedef struct data_store_t {
+    pthread_rwlock_t m_lock;
+    int (*wr_lock)(struct data_store_t *);
+    int (*rd_lock)(struct data_store_t *);
+    int (*unlock)(struct data_store_t *);
+} data_store_t;
+
+/**
+ * This helper function calls pthread_rwlock_rdlock on the
+ * m_lock of a data_store_t structure.
+ */
+int rd_lock_data_store(data_store_t* data_store) {
+    return pthread_rwlock_rdlock(&data_store->m_lock);
+}
+
+/**
+ * This helper function calls pthread_rwlock_wrlock on the
+ * m_lock of a data_store_t structure.
+ */
+int wr_lock_data_store(data_store_t* data_store) {
+    return pthread_rwlock_wrlock(&data_store->m_lock);
+}
+
+/**
+ * This helper function calls pthread_rwlock_unlock on the
+ * m_lock of a data_store_t structure.
+ */
+int unlock_data_store(data_store_t* data_store) {
+    return pthread_rwlock_unlock(&data_store->m_lock);
+}
+
+/**
+ * This helper function creates ready to use data_store_t
+ * structures.
+ */
+data_store_t* create_data_store() {
+    data_store_t* retval = malloc(sizeof(data_store_t));
+
+    pthread_rwlock_init(&retval->m_lock, NULL);
+    retval->wr_lock = wr_lock_data_store;
+    retval->rd_lock = rd_lock_data_store;
+    retval->unlock = unlock_data_store;
+
+    return retval;
+}
+
+/**
+ * This helper function cleans up a data_store structure
+ * and then frees it.
+ */
+void destroy_data_store(data_store_t* data_store) {
+    if(NULL != data_store) {
+        pthread_rwlock_destroy(&data_store->m_lock);
+        free(data_store);
+    }
+}
 
 /**
  * This thread is responsible for pulling data off of the shared data
@@ -93,6 +153,7 @@ handle_event()
  */
 void *reader_thread(void *arg) {
     //TODO: Define set-up required
+    data_store_t* shared_data = (data_store_t*)arg;
 
     while(1) {
         //TODO: Define data extraction (queue) and processing
@@ -101,7 +162,6 @@ void *reader_thread(void *arg) {
     return NULL;
 }
 
-
 /**
  * This thread is responsible for pulling data from a device using the
  * get_external_data() API and placing it into a shared area for later
@@ -109,6 +169,7 @@ void *reader_thread(void *arg) {
  */
 void *writer_thread(void *arg) {
     //TODO: Define set-up required
+    data_store_t* shared_data = (data_store_t*)arg;
 
     while(1) {
         //TODO: Define data extraction (device) and storage
@@ -117,20 +178,20 @@ void *writer_thread(void *arg) {
     return NULL;
 }
 
-
 #define M 10
 #define N 20
 
 int main(int argc, char **argv)
 {
     int i;
+    data_store_t* shared_data = create_data_store();
 
     for(i = 0; i < N; i++) {
-        pthread_create(NULL, NULL, reader_thread, NULL);
+        pthread_create(NULL, NULL, reader_thread, shared_data);
     }
 
     for(i = 0; i < M; i++) {
-        pthread_create(NULL, NULL, writer_thread, NULL);
+        pthread_create(NULL, NULL, writer_thread, shared_data);
     }
 
     const int usage = SCREEN_USAGE_NATIVE;
@@ -165,6 +226,8 @@ int main(int argc, char **argv)
     }
 
     /* Clean up */
+    // TODO stop all the read/write threads
+    destroy_data_store(shared_data);
     screen_stop_events(screen_ctx);
     bps_shutdown();
     screen_destroy_window(screen_win);
