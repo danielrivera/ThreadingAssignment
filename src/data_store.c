@@ -15,7 +15,7 @@
 #include <errno.h>
 #include <string.h>
 #include <assert.h>
-#include <stdio.h>
+#include <stdlib.h>
 #include "data_store.h"
 
 static void data_block_init(data_block_t* data_block, const char* data, int data_size);
@@ -149,7 +149,11 @@ void data_store_destroy(data_store_t* data_store) {
 
     // Destroy the data blocks.
     if (data_store->__data_blocks) {
-        //TODO Clean up all the data blocks
+        int i;
+        for (i = 0; i < data_store->__data_block_count; i++) {
+            data_block_t* data_block = &data_store->__data_blocks[i];
+            data_block->process(data_block, NULL); // Processing a data block cleans it up
+        }
         free(data_store->__data_blocks);
         data_store->__data_blocks = NULL;
         data_store->__data_block_count = 0;

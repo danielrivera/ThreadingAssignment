@@ -115,7 +115,7 @@ void process_data(const char *buffer, int bufferSizeInBytes) {
  */
 void *reader_thread(void *arg) {
     data_store_t* shared_data = (data_store_t*)arg;
-    int data_block_index = 0;
+    int next_data_block_index = 0;
 
     while(shared_data) {
         // Wait until some data is available
@@ -124,16 +124,16 @@ void *reader_thread(void *arg) {
         // Lock for reading
         shared_data->rd_lock(shared_data);
 
-        // Try to process a block until the end of the data set
-        while (data_block_index < shared_data->__data_block_count) {
-            data_block_t* data_block = &shared_data->__data_blocks[data_block_index];
+        // Find the next available block starting from the last data block index we used.
+        while (next_data_block_index < shared_data->__data_block_count) {
+            data_block_t* data_block = &shared_data->__data_blocks[next_data_block_index];
+
+            next_data_block_index++;
 
             if (data_block->process(data_block, process_data)) {
-                // The block was processed, exit
+                // The block was processed, break out of the "find next available block" loop
                 break;
             }
-
-            data_block_index++;
         }
 
         // Done processing a block, unlock the read lock.
